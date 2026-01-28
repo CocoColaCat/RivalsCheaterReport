@@ -275,7 +275,7 @@
 </footer>
 
 <script>
-  const SOCKET_URL = 'https://your-render-url.onrender.com'; // 改成你的 Render 網址或 localhost:3000
+  const SOCKET_URL = 'https://rivalscheaterreport-backed.onrender.com';
   const socket = io(SOCKET_URL);
 
   let reports = [];
@@ -362,7 +362,7 @@
 
     if (!username || !evidence_url || !timestamp) {
       const msg = document.getElementById('submit-message');
-      msg.textContent = '請填寫所有必填欄位';
+      msg.textContent = 'Please fill in all required fields.';
       msg.className = 'mt-4 p-4 rounded-lg text-center bg-red-600/20 text-red-400';
       msg.classList.remove('hidden');
       return;
