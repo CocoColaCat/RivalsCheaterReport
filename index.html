@@ -247,71 +247,24 @@
   const SOCKET_URL = 'https://rivalscheaterreport-backed.onrender.com';
   const socket = io(SOCKET_URL);
 
-  let reports = [];
-  let currentVoteIndex = 0;
+  let currentReport = null;
   let reportToken = null;
   let voteToken = null;
-  let votedReportIds = new Set();
-
-  socket.on('connect', () => {
-    socket.emit('getReports');
-    socket.emit('getVotedReports');
-  });
-
-  socket.on('reportsList', (data) => {
-    reports = data || [];
-    filterAndLoadReports();
-  });
-
-  socket.on('votedReportsList', (votedIds) => {
-    votedReportIds = new Set(votedIds);
-    filterAndLoadReports();
-  });
-
-  socket.on('newReport', (report) => {
-    reports.push(report);
-    filterAndLoadReports();
-  });
-
-  socket.on('voteUpdate', (updatedReport) => {
-    const index = reports.findIndex(r => r.id === updatedReport.id);
-    if (index !== -1) {
-      reports[index] = updatedReport;
-      if (index === currentVoteIndex) {
-        updateVoteResults(updatedReport);
-      }
-    }
-  });
-
-  socket.on('submitResponse', (res) => {
-    const messageEl = document.getElementById('submit-message');
-    messageEl.textContent = res.message;
-    messageEl.className = `mt-4 p-4 rounded-lg text-center ${res.success ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`;
-    messageEl.classList.remove('hidden');
-    if (res.success) document.getElementById('report-form').reset();
-    setTimeout(() => messageEl.classList.add('hidden'), 4000);
-  });
-
-  socket.on('voteResponse', (res) => {
-    if (res.success) {
-      document.getElementById('before-vote').classList.add('hidden');
-      document.getElementById('after-vote').classList.remove('hidden');
-    } else {
-      alert(res.message || 'Vote failed');
-    }
-  });
 
   function showScreen(screen) {
     document.getElementById('home-screen').classList.add('hidden');
     document.getElementById('report-screen').classList.add('hidden');
     document.getElementById('vote-screen').classList.add('hidden');
     document.getElementById(`${screen}-screen`).classList.remove('hidden');
+
     if (screen === 'report') {
       document.getElementById('warning-modal').classList.remove('hidden');
       renderTurnstile('report-turnstile-container', 'onReportTurnstileSuccess');
     }
+
     if (screen === 'vote') {
       renderTurnstile('vote-turnstile-container', 'onVoteTurnstileSuccess');
+      socket.emit('getNextReport');
     }
   }
 
@@ -379,47 +332,34 @@
   });
 
   function castVote(voteType) {
-    const report = reports[currentVoteIndex];
-    if (!report?.id) return;
+    if (!currentReport?.id) return;
     if (!voteToken) {
       alert('Please complete verification');
       return;
     }
     socket.emit(voteType === 'cheater' ? 'voteCheater' : 'voteInnocent', {
-      reportId: String(report.id),
+      reportId: currentReport.id,
       cf_turnstile_token: voteToken
     });
     voteToken = null;
     renderTurnstile('vote-turnstile-container', 'onVoteTurnstileSuccess');
   }
 
-  function filterAndLoadReports() {
-    const pendingReports = reports.filter(r => 
-      r.status === 'pending' && !votedReportIds.has(r.id)
-    );
-    if (pendingReports.length === 0) {
+  socket.on('nextReport', (report) => {
+    if (!report) {
       document.getElementById('before-vote').classList.add('hidden');
       document.getElementById('after-vote').classList.add('hidden');
       document.getElementById('no-more-reports').classList.remove('hidden');
       return;
     }
-    reports = pendingReports;
-    currentVoteIndex = 0;
-    loadNextReport();
-  }
 
-  function loadNextReport() {
-    if (currentVoteIndex >= reports.length) {
-      document.getElementById('before-vote').classList.add('hidden');
-      document.getElementById('after-vote').classList.add('hidden');
-      document.getElementById('no-more-reports').classList.remove('hidden');
-      return;
-    }
-    const report = reports[currentVoteIndex];
+    currentReport = report;
+
     document.getElementById('player-name').textContent = escapeHtml(report.username);
     document.getElementById('evidence-link').href = report.evidence_url;
     document.getElementById('evidence-text').textContent = 'View Video';
     document.getElementById('timestamp-text').textContent = escapeHtml(report.timestamp);
+
     const addSection = document.getElementById('additional-section');
     if (report.additional_info) {
       document.getElementById('additional-text').textContent = escapeHtml(report.additional_info);
@@ -427,38 +367,26 @@
     } else {
       addSection.classList.add('hidden');
     }
+
     document.getElementById('before-vote').classList.remove('hidden');
     document.getElementById('after-vote').classList.add('hidden');
     document.getElementById('no-more-reports').classList.add('hidden');
-    updateProgress();
-    updateVoteResults(report);
-  }
 
-  function updateVoteResults(report) {
-    const total = report.votes_cheater + report.votes_innocent;
-    const cheaterPct = total > 0 ? (report.votes_cheater / total) * 100 : 0;
-    const innocentPct = total > 0 ? (report.votes_innocent / total) * 100 : 0;
-    document.getElementById('cheater-count').textContent = report.votes_cheater;
-    document.getElementById('innocent-count').textContent = report.votes_innocent;
-    document.getElementById('cheater-bar').style.width = `${cheaterPct}%`;
-    document.getElementById('innocent-bar').style.width = `${innocentPct}%`;
-  }
+    document.getElementById('current-report').textContent = 'Viewing';
+    document.getElementById('total-reports').textContent = 'Unknown';
+  });
+
+  socket.on('voteResponse', (res) => {
+    if (res.success) {
+      document.getElementById('before-vote').classList.add('hidden');
+      document.getElementById('after-vote').classList.remove('hidden');
+    } else {
+      alert(res.message || 'Vote failed');
+    }
+  });
 
   function nextReport() {
-    currentVoteIndex++;
-    loadNextReport();
-  }
-
-  function updateProgress() {
-    document.getElementById('current-report').textContent = currentVoteIndex + 1;
-    document.getElementById('total-reports').textContent = reports.length;
-    const dots = document.getElementById('progress-dots');
-    dots.innerHTML = '';
-    for (let i = 0; i < reports.length; i++) {
-      const dot = document.createElement('div');
-      dot.className = `w-2 h-2 rounded-full ${i === currentVoteIndex ? 'bg-red-500' : 'bg-gray-600'}`;
-      dots.appendChild(dot);
-    }
+    socket.emit('getNextReport');
   }
 
   function escapeHtml(text) {
