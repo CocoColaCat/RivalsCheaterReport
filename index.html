@@ -15,6 +15,7 @@
     @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 40px rgba(239, 68, 68, 0.8); } }
     @keyframes slide-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @keyframes fadeOut { to { opacity: 0; transform: translateY(-20px); } }
     .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
     .animate-slide-up { animation: slide-up 0.5s ease-out forwards; }
     .animate-float { animation: float 3s ease-in-out infinite; }
@@ -30,6 +31,14 @@
     .input-field:focus { border-color: #ef4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); outline: none; }
     .vote-card { background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); transition: all 0.3s ease; }
     .vote-card:hover { border-color: rgba(239, 68, 68, 0.5); background: rgba(30, 41, 59, 0.9); }
+    .toast { 
+      position: fixed; 
+      top: 20px; 
+      right: 20px; 
+      z-index: 9999; 
+      animation: slide-up 0.5s ease-out, fadeOut 3s 1s forwards; 
+    }
+    @keyframes fadeOut { to { opacity: 0; transform: translateY(-20px); } }
   </style>
 </head>
 <body class="h-full font-rajdhani">
@@ -243,6 +252,22 @@
   </div>
 </footer>
 
+<div id="success-toast" class="hidden fixed top-6 right-6 z-50 bg-green-600/90 text-white px-8 py-5 rounded-xl shadow-2xl flex items-center gap-4">
+  <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+  <div>
+    <p class="font-bold text-lg">Report Successful!</p>
+    <p class="text-sm mt-1">Thank you for your report, the system is processing...</p>
+  </div>
+</div>
+
+<div id="error-toast" class="hidden fixed top-6 right-6 z-50 bg-red-600/90 text-white px-8 py-5 rounded-xl shadow-2xl flex items-center gap-4">
+  <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+  <div>
+    <p class="font-bold text-lg">Error Occurred</p>
+    <p class="text-sm mt-1" id="error-toast-message">Please try again later</p>
+  </div>
+</div>
+
 <script>
   const SOCKET_URL = 'https://rivalscheaterreport-backed.onrender.com';
   const socket = io(SOCKET_URL);
@@ -250,6 +275,19 @@
   let currentReport = null;
   let reportToken = null;
   let voteToken = null;
+
+  function showToast(type, title, message, duration = 3000) {
+    const toast = document.getElementById(type + '-toast');
+    if (type === 'error') {
+      document.getElementById('error-toast-message').textContent = message;
+    }
+    toast.querySelector('p.font-bold').textContent = title;
+    toast.classList.remove('hidden');
+    setTimeout(() => {
+      toast.classList.add('hidden');
+      if (type === 'success') location.reload();
+    }, duration);
+  }
 
   function showScreen(screen) {
     document.getElementById('home-screen').classList.add('hidden');
@@ -312,7 +350,7 @@
   document.getElementById('report-form').addEventListener('submit', (e) => {
     e.preventDefault();
     if (!reportToken) {
-      alert('Please complete verification');
+      showToast('error', 'Verification Required', 'Please complete the Turnstile verification');
       return;
     }
     const data = {
@@ -323,7 +361,7 @@
       cf_turnstile_token: reportToken
     };
     if (!data.username || !data.evidence_url || !data.timestamp) {
-      alert('Please fill in all required fields.');
+      showToast('error', 'Missing Fields', 'Please fill in all required fields');
       return;
     }
     socket.emit('submitReport', data);
@@ -334,7 +372,7 @@
   function castVote(voteType) {
     if (!currentReport?.id) return;
     if (!voteToken) {
-      alert('Please complete verification');
+      showToast('error', 'Verification Required', 'Please complete the Turnstile verification');
       return;
     }
     socket.emit(voteType === 'cheater' ? 'voteCheater' : 'voteInnocent', {
@@ -376,12 +414,20 @@
     document.getElementById('total-reports').textContent = 'Unknown';
   });
 
+  socket.on('submitResponse', (res) => {
+    if (res.success) {
+      showToast('success', 'Report Successful!', 'Thank you for your report, the system is processing...');
+    } else {
+      showToast('error', 'Report Failed', res.message || 'Please try again later');
+    }
+  });
+
   socket.on('voteResponse', (res) => {
     if (res.success) {
       document.getElementById('before-vote').classList.add('hidden');
       document.getElementById('after-vote').classList.remove('hidden');
     } else {
-      alert(res.message || 'Vote failed');
+      showToast('error', 'Vote Failed', res.message || 'Please try again later');
     }
   });
 
