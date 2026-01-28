@@ -132,9 +132,7 @@
           <textarea id="additional-info" name="additional-info" placeholder="Any other details about the incident (optional)" rows="3" class="input-field w-full px-4 py-3 rounded-lg text-white placeholder-gray-500 resize-none"></textarea>
           <p class="text-gray-500 text-sm mt-2">Optional - provide context or additional details</p>
         </div>
-        <div class="mb-6">
-          <div class="cf-turnstile" data-sitekey="0x4AAAAAACU5g4P-FeZAiWGU" data-callback="onReportTurnstileSuccess" data-theme="dark" data-size="normal"></div>
-        </div>
+        <div id="report-turnstile-container" class="mb-6"></div>
         <div class="warning-banner rounded-lg p-4">
           <p class="text-yellow-600 text-sm">ℹ Please provide clear evidence of cheating behavior. Reports without proper evidence may be dismissed.</p>
         </div>
@@ -179,9 +177,7 @@
             <h2 id="player-name" class="font-russo text-4xl text-white mb-2">Loading...</h2>
             <p class="text-gray-400">Is this player cheating?</p>
           </div>
-          <div class="mb-6 text-center">
-            <div class="cf-turnstile inline-block" data-sitekey="0x4AAAAAACU5g4P-FeZAiWGU" data-callback="onVoteTurnstileSuccess" data-theme="dark" data-size="compact"></div>
-          </div>
+          <div id="vote-turnstile-container" class="mb-6 text-center"></div>
           <div id="evidence-section" class="mb-8 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
             <p class="text-gray-400 text-sm mb-3">Evidence:</p>
             <a id="evidence-link" href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors font-semibold">
@@ -255,26 +251,26 @@
   let currentVoteIndex = 0;
   let reportToken = null;
   let voteToken = null;
+  let votedReportIds = new Set();
 
   socket.on('connect', () => {
-    if (!document.getElementById('vote-screen').classList.contains('hidden')) {
-      socket.emit('getReports');
-    }
+    socket.emit('getReports');
+    socket.emit('getVotedReports');
   });
 
   socket.on('reportsList', (data) => {
     reports = data || [];
-    if (!document.getElementById('vote-screen').classList.contains('hidden')) {
-      currentVoteIndex = 0;
-      loadNextReport();
-    }
+    filterAndLoadReports();
+  });
+
+  socket.on('votedReportsList', (votedIds) => {
+    votedReportIds = new Set(votedIds);
+    filterAndLoadReports();
   });
 
   socket.on('newReport', (report) => {
     reports.push(report);
-    if (!document.getElementById('vote-screen').classList.contains('hidden')) {
-      updateProgress();
-    }
+    filterAndLoadReports();
   });
 
   socket.on('voteUpdate', (updatedReport) => {
@@ -312,11 +308,39 @@
     document.getElementById(`${screen}-screen`).classList.remove('hidden');
     if (screen === 'report') {
       document.getElementById('warning-modal').classList.remove('hidden');
+      renderTurnstile('report-turnstile-container', 'onReportTurnstileSuccess');
     }
     if (screen === 'vote') {
-      currentVoteIndex = 0;
-      socket.emit('getReports');
+      renderTurnstile('vote-turnstile-container', 'onVoteTurnstileSuccess');
     }
+  }
+
+  function renderTurnstile(containerId, callbackName) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const widget = document.createElement('div');
+    widget.className = 'cf-turnstile';
+    widget.setAttribute('data-sitekey', '0x4AAAAAACU5g4P-FeZAiWGU');
+    widget.setAttribute('data-callback', callbackName);
+    widget.setAttribute('data-theme', 'dark');
+    widget.setAttribute('data-size', containerId === 'report-turnstile-container' ? 'normal' : 'compact');
+    container.appendChild(widget);
+    if (window.turnstile) {
+      window.turnstile.render(container, {
+        sitekey: '0x4AAAAAACU5g4P-FeZAiWGU',
+        callback: window[callbackName],
+        theme: 'dark',
+        size: containerId === 'report-turnstile-container' ? 'normal' : 'compact'
+      });
+    }
+  }
+
+  function onReportTurnstileSuccess(token) {
+    reportToken = token;
+  }
+
+  function onVoteTurnstileSuccess(token) {
+    voteToken = token;
   }
 
   function scrollToTop() {
@@ -332,18 +356,10 @@
     document.getElementById('warning-modal').classList.add('hidden');
   }
 
-  function onReportTurnstileSuccess(token) {
-    reportToken = token;
-  }
-
-  function onVoteTurnstileSuccess(token) {
-    voteToken = token;
-  }
-
   document.getElementById('report-form').addEventListener('submit', (e) => {
     e.preventDefault();
     if (!reportToken) {
-      alert('Please complete verification first');
+      alert('Please complete verification');
       return;
     }
     const data = {
@@ -359,20 +375,37 @@
     }
     socket.emit('submitReport', data);
     reportToken = null;
+    renderTurnstile('report-turnstile-container', 'onReportTurnstileSuccess');
   });
 
   function castVote(voteType) {
     const report = reports[currentVoteIndex];
     if (!report?.id) return;
     if (!voteToken) {
-      alert('Please complete verification first');
+      alert('Please complete verification');
       return;
     }
     socket.emit(voteType === 'cheater' ? 'voteCheater' : 'voteInnocent', {
-      reportId: report.id,
+      reportId: String(report.id),
       cf_turnstile_token: voteToken
     });
     voteToken = null;
+    renderTurnstile('vote-turnstile-container', 'onVoteTurnstileSuccess');
+  }
+
+  function filterAndLoadReports() {
+    const pendingReports = reports.filter(r => 
+      r.status === 'pending' && !votedReportIds.has(r.id)
+    );
+    if (pendingReports.length === 0) {
+      document.getElementById('before-vote').classList.add('hidden');
+      document.getElementById('after-vote').classList.add('hidden');
+      document.getElementById('no-more-reports').classList.remove('hidden');
+      return;
+    }
+    reports = pendingReports;
+    currentVoteIndex = 0;
+    loadNextReport();
   }
 
   function loadNextReport() {
