@@ -4,9 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Roblox Rivals Report System</title>
+
+  <!-- Open Graph Meta Tags -->
   <meta property="og:site_name" content="ROBLOX RIVALS UNOFFICIAL REPORT SYSTEM">
   <meta property="og:title" content="ROBLOX RIVALS UNOFFICIAL REPORT SYSTEM">
   <meta property="og:description" content="Due to frequent issues with the official Rivals reporting system, this platform has been created to assist the community and developers in identifying and managing cheaters in Roblox Rivals.">
+
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -42,6 +45,24 @@
       animation: slide-up 0.5s ease-out, fadeOut 3s 1s forwards; 
     }
     @keyframes fadeOut { to { opacity: 0; transform: translateY(-20px); } }
+    .youtube-embed-container {
+      position: relative;
+      padding-bottom: 56.25%;
+      height: 0;
+      overflow: hidden;
+      max-width: 100%;
+      background: #000;
+      border-radius: 0.5rem;
+      margin-top: 1rem;
+    }
+    .youtube-embed-container iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
   </style>
 </head>
 <body class="h-full font-rajdhani">
@@ -196,6 +217,7 @@
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span id="evidence-text">View Video</span>
             </a>
+            <div id="youtube-embed" class="youtube-embed-container hidden"></div>
           </div>
           <div id="timestamp-section" class="mb-8 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
             <p class="text-gray-400 text-sm mb-2">Timestamp:</p>
@@ -386,6 +408,15 @@
     renderTurnstile('vote-turnstile-container', 'onVoteTurnstileSuccess');
   }
 
+  function isYouTubeUrl(url) {
+    return /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i.test(url);
+  }
+
+  function getYouTubeEmbedUrl(url) {
+    const match = url.match(/(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i);
+    return match ? `https://www.youtube.com/embed/${match[1]}` : null;
+  }
+
   socket.on('nextReport', (report) => {
     if (!report) {
       document.getElementById('before-vote').classList.add('hidden');
@@ -399,6 +430,24 @@
     document.getElementById('player-name').textContent = escapeHtml(report.username);
     document.getElementById('evidence-link').href = report.evidence_url;
     document.getElementById('evidence-text').textContent = 'View Video';
+
+    // YouTube Embed 處理
+    const embedContainer = document.getElementById('youtube-embed');
+    embedContainer.innerHTML = '';
+    embedContainer.classList.add('hidden');
+
+    if (isYouTubeUrl(report.evidence_url)) {
+      const embedUrl = getYouTubeEmbedUrl(report.evidence_url);
+      if (embedUrl) {
+        const iframe = document.createElement('iframe');
+        iframe.src = embedUrl;
+        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+        iframe.allowFullscreen = true;
+        embedContainer.appendChild(iframe);
+        embedContainer.classList.remove('hidden');
+      }
+    }
+
     document.getElementById('timestamp-text').textContent = escapeHtml(report.timestamp);
 
     const addSection = document.getElementById('additional-section');
